@@ -43,11 +43,11 @@ if (System.env['APPVEYOR']) {
     }
     exec {
         executable "git"
-        args "config", "--global", "user.email", "love.tangzx@qq.com"
+        args "config", "--global", "user.email", "zhu.tie@163.com"
     }
     exec {
         executable "git"
-        args "config", "--global", "user.name", "tangzx"
+        args "config", "--global", "user.name", "zhutie"
     }
 }
 
@@ -111,10 +111,11 @@ buildPlugin.baseName = cfg.archiveName
 
 task downloadEmmyDebugger(type: Download) {
     src ([
-            "https://github.com/EmmyLua/EmmyLuaDebugger/releases/download/${emmyDebuggerVersion}/emmy_core.so",
-            "https://github.com/EmmyLua/EmmyLuaDebugger/releases/download/${emmyDebuggerVersion}/emmy_core.dylib",
-            "https://github.com/EmmyLua/EmmyLuaDebugger/releases/download/${emmyDebuggerVersion}/emmy_core@x64.zip",
-            "https://github.com/EmmyLua/EmmyLuaDebugger/releases/download/${emmyDebuggerVersion}/emmy_core@x86.zip",
+            "https://github.com/zt5/EmmyLuaDebugger/releases/download/${emmyDebuggerVersion}/emmy_core.so",
+            "https://github.com/zt5/EmmyLuaDebugger/releases/download/${emmyDebuggerVersion}/emmy_core.dylib",
+            "https://github.com/zt5/EmmyLuaDebugger/releases/download/${emmyDebuggerVersion}/emmy_core@x64.zip",
+            "https://github.com/zt5/EmmyLuaDebugger/releases/download/${emmyDebuggerVersion}/emmy_core@x86.zip",
+            "https://github.com/zt5/EmmyLuaLegacyDebugger/releases/download/${emmyLegacyDebuggerVersion}/debugger.zip"
     ])
     dest "temp"
 }
@@ -128,16 +129,19 @@ task unzipEmmyDebugger(type: Copy, dependsOn: downloadEmmyDebugger) {
         //include "emmy_core.dll"
         into "x86"
     }
+    from(zipTree("temp/debugger.zip")) {
+        into "legacy"
+    }
     destinationDir file("temp")
 }
 
 task installEmmyDebugger(dependsOn: unzipEmmyDebugger, type: Copy) {
     from("temp/x64/") {
-        include "emmy_core.dll"
+//        include "emmy_core.dll"
         into "debugger/emmy/windows/x64"
     }
     from("temp/x86/") {
-        include "emmy_core.dll"
+//        include "emmy_core.dll"
         into "debugger/emmy/windows/x86"
     }
     from("temp") {
@@ -147,6 +151,10 @@ task installEmmyDebugger(dependsOn: unzipEmmyDebugger, type: Copy) {
     from("temp") {
         include "emmy_core.dylib"
         into "debugger/emmy/mac"
+    }
+    from("temp/legacy") {
+        include "**/*"
+        into "debugger/windows"
     }
     destinationDir file("src/main/resources")
 }

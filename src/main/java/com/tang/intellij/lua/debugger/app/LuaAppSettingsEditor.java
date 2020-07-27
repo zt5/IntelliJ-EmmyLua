@@ -27,6 +27,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectRootManager;
 import com.intellij.openapi.ui.ComboBox;
 import com.intellij.openapi.ui.TextFieldWithBrowseButton;
+import com.intellij.openapi.util.SystemInfoRt;
 import com.intellij.ui.HoverHyperlinkLabel;
 import com.intellij.ui.HyperlinkAdapter;
 import com.intellij.ui.RawCommandLineEditor;
@@ -69,16 +70,19 @@ public class LuaAppSettingsEditor extends SettingsEditor<LuaAppRunConfiguration>
         descriptor = FileChooserDescriptorFactory.createSingleFolderDescriptor();
         myWorkingDir.addBrowseFolderListener("Choose Working Dir", "Choose working dir", project, descriptor);
 
-        DebuggerType[] debuggerTypes = new DebuggerType[] { DebuggerType.Mob };
-        /*if (SystemInfoRt.isWindows)
+        DebuggerType[] debuggerTypes;
+        if (SystemInfoRt.isWindows)
             debuggerTypes = new DebuggerType[] { DebuggerType.Attach, DebuggerType.Mob };
         else
-            debuggerTypes = new DebuggerType[] { DebuggerType.Mob };*/
+            debuggerTypes = new DebuggerType[] { DebuggerType.Mob };
 
         DefaultComboBoxModel<DebuggerType> debuggerDataModel = new DefaultComboBoxModel<>(debuggerTypes);
         myDebugger.setModel(debuggerDataModel);
         myDebugger.addItemListener(e -> {
-            onDebuggerTypeChanged();
+            DebuggerType debuggerType = (DebuggerType) myDebugger.getSelectedItem();
+            mobdebugLink.setVisible(debuggerType == DebuggerType.Mob);
+            showConsoleWindowCheckBox.setVisible(debuggerType == DebuggerType.Attach);
+
             fireEditorStateChanged();
         });
 
@@ -87,14 +91,6 @@ public class LuaAppSettingsEditor extends SettingsEditor<LuaAppRunConfiguration>
         DefaultComboBoxModel<String> outputCharsetModel = new DefaultComboBoxModel<>(ArrayUtil.toStringArray(charsetSortedMap.keySet()));
         outputCharset.setModel(outputCharsetModel);
         outputCharset.addItemListener(e -> fireEditorStateChanged());
-
-        onDebuggerTypeChanged();
-    }
-
-    private void onDebuggerTypeChanged() {
-        DebuggerType debuggerType = (DebuggerType) myDebugger.getSelectedItem();
-        mobdebugLink.setVisible(debuggerType == DebuggerType.Mob);
-        showConsoleWindowCheckBox.setVisible(debuggerType == DebuggerType.Attach);
     }
 
     @Override
