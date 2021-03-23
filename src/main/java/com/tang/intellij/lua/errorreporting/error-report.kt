@@ -21,7 +21,7 @@ import com.intellij.diagnostic.AbstractMessage
 import com.intellij.diagnostic.IdeErrorsDialog
 import com.intellij.diagnostic.ReportMessages
 import com.intellij.ide.DataManager
-import com.intellij.ide.plugins.PluginManager
+import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.idea.IdeaLogger
 import com.intellij.notification.NotificationListener
 import com.intellij.notification.NotificationType
@@ -39,6 +39,7 @@ import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.SystemInfo
 import com.intellij.util.Consumer
+import com.tang.intellij.lua.util.appendLine
 import org.eclipse.egit.github.core.Issue
 import org.eclipse.egit.github.core.Label
 import org.eclipse.egit.github.core.RepositoryId
@@ -47,7 +48,10 @@ import org.eclipse.egit.github.core.service.IssueService
 import org.jetbrains.annotations.NonNls
 import org.jetbrains.annotations.PropertyKey
 import java.awt.Component
-import java.io.*
+import java.io.IOException
+import java.io.ObjectInputStream
+import java.io.PrintWriter
+import java.io.StringWriter
 import java.net.URL
 import java.util.*
 import javax.crypto.Cipher
@@ -68,7 +72,7 @@ private object AnonymousFeedback {
 	 * @return The report info that is then used in [GitHubErrorReporter] to show the user a balloon with the link
 	 * of the created issue.
 	 */
-	internal fun sendFeedback(environmentDetails: MutableMap<String, String>): SubmittedReportInfo {
+	fun sendFeedback(environmentDetails: MutableMap<String, String>): SubmittedReportInfo {
 		val logger = Logger.getInstance(javaClass.name)
 		try {
 			val resource: URL? = javaClass.classLoader.getResource(tokenFile)
@@ -117,9 +121,9 @@ private object AnonymousFeedback {
 			buildString {
 				val errorDescription = details.remove("error.description").orEmpty()
 				val stackTrace = details.remove("error.stacktrace")?.takeIf(String::isNotBlank) ?: "invalid stacktrace"
-				if (errorDescription.isNotEmpty()) append(errorDescription).appendln("\n\n----------------------\n")
-				for ((key, value) in details) append("- ").append(key).append(": ").appendln(value)
-				if (includeStacktrace) appendln("\n```").appendln(stackTrace).appendln("```")
+				if (errorDescription.isNotEmpty()) append(errorDescription).appendLine("\n\n----------------------\n")
+				for ((key, value) in details) append("- ").append(key).append(": ").appendLine(value)
+				if (includeStacktrace) appendLine("\n```").appendLine(stackTrace).appendLine("```")
 			}
 }
 
@@ -136,37 +140,22 @@ private fun decrypt(file: URL): String {
 	})))
 }
 
-fun main(args: Array<String>) {
-	if (args.size != 2) return
-	val o = ObjectOutputStream(FileOutputStream(args[1]))
-	o.writeObject(encrypt(args[0]))
-	o.close()
-}
-
-private fun encrypt(value: String): String {
-	val cipher = Cipher.getInstance("AES/CBC/PKCS5PADDING")
-	cipher.init(Cipher.ENCRYPT_MODE,
-		SecretKeySpec(key.toByteArray(charset("UTF-8")), "AES"),
-		IvParameterSpec(initVector.toByteArray(charset("UTF-8"))))
-	return Base64.getEncoder().encodeToString(cipher.doFinal(value.toByteArray()))
-}
-
-class GitHubErrorReporter : ErrorReportSubmitter() {
+class GitHubErrorReporter : LuaErrorReportSubmitter() {
 	override fun getReportActionText() = ErrorReportBundle.message("report.error.to.plugin.vendor")
-	override fun submit(
-			events: Array<IdeaLoggingEvent>,
-			info: String?,
-			parent: Component,
-			consumer: Consumer<SubmittedReportInfo>): Boolean {
+	override fun doSubmit(
+			events: Array<out IdeaLoggingEvent>?,
+			additionalInfo: String?,
+			parentComponent: Component,
+			consumer: Consumer<in SubmittedReportInfo>): Boolean {
 		// TODO improve
-		val event = events.firstOrNull { it.throwable != null } ?: return false
-		return doSubmit(event, parent, consumer, info)
+		val event = events?.firstOrNull { it.throwable != null } ?: return false
+		return doSubmit(event, parentComponent, consumer, additionalInfo)
 	}
 
 	private fun doSubmit(
 			event: IdeaLoggingEvent,
 			parent: Component,
-			callback: Consumer<SubmittedReportInfo>,
+			callback: Consumer<in SubmittedReportInfo>,
 			description: String?): Boolean {
 		val dataContext = DataManager.getInstance().getDataContext(parent)
 		val bean = GitHubErrorBean(
@@ -175,7 +164,7 @@ class GitHubErrorReporter : ErrorReportSubmitter() {
 				description ?: "<No description>",
 				event.message ?: event.throwable.message.toString())
 		IdeErrorsDialog.findPluginId(event.throwable)?.let { pluginId ->
-			PluginManager.getPlugin(pluginId)?.let { ideaPluginDescriptor ->
+			PluginManagerCore.getPlugin(pluginId)?.let { ideaPluginDescriptor ->
 				if (!ideaPluginDescriptor.isBundled) {
 					bean.pluginName = ideaPluginDescriptor.name
 					bean.pluginVersion = ideaPluginDescriptor.version
@@ -198,7 +187,7 @@ class GitHubErrorReporter : ErrorReportSubmitter() {
 	}
 
 	internal class CallbackWithNotification(
-		private val consumer: Consumer<SubmittedReportInfo>,
+		private val consumer: Consumer<in SubmittedReportInfo>,
 		private val project: Project?) : Consumer<SubmittedReportInfo> {
 		override fun consume(reportInfo: SubmittedReportInfo) {
 			consumer.consume(reportInfo)
@@ -242,7 +231,7 @@ private object ErrorReportBundle {
 	private val bundle: ResourceBundle by lazy { ResourceBundle.getBundle(BUNDLE) }
 
 	@JvmStatic
-	internal fun message(@PropertyKey(resourceBundle = BUNDLE) key: String, vararg params: Any) =
+	fun message(@PropertyKey(resourceBundle = BUNDLE) key: String, vararg params: Any) =
 		CommonBundle.message(bundle, key, *params)
 }
 
@@ -264,7 +253,7 @@ private fun getKeyValuePairs(
 		error: GitHubErrorBean,
 		appInfo: ApplicationInfoEx,
 		namesInfo: ApplicationNamesInfo): MutableMap<String, String> {
-	PluginManager.getPlugin(PluginId.findId("com.tang"))?.run {
+	PluginManagerCore.getPlugin(PluginId.findId("com.tang"))?.run {
 		if (error.pluginName.isBlank()) error.pluginName = name
 		if (error.pluginVersion.isBlank()) error.pluginVersion = version
 	}

@@ -17,6 +17,7 @@
 package com.tang.intellij.lua.ty
 
 import com.intellij.openapi.project.Project
+import com.intellij.psi.PsiFile
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.stubs.StubInputStream
 import com.intellij.psi.stubs.StubOutputStream
@@ -38,12 +39,15 @@ interface ITyClass : ITy {
     var aliasName: String?
     fun processAlias(processor: Processor<String>): Boolean
     fun lazyInit(searchContext: SearchContext)
+    fun getMemberChain(context: SearchContext): ClassMemberChain
     fun processMembers(context: SearchContext, processor: (ITyClass, LuaClassMember) -> Unit, deep: Boolean = true)
     fun processMembers(context: SearchContext, processor: (ITyClass, LuaClassMember) -> Unit) {
         processMembers(context, processor, true)
     }
     fun findMember(name: String, searchContext: SearchContext): LuaClassMember?
-    fun findMemberType(name: String, searchContext: SearchContext): ITy?
+    fun findMemberType(name: String, searchContext: SearchContext): ITy? {
+        return infer(findMember(name, searchContext), searchContext)
+    }
     fun findSuperMember(name: String, searchContext: SearchContext): LuaClassMember?
 
     fun recoverAlias(context: SearchContext, aliasSubstitutor: TyAliasSubstitutor): ITy {
@@ -96,49 +100,35 @@ abstract class TyClass(override val className: String,
         return true
     }
 
-    override fun processMembers(context: SearchContext, processor: (ITyClass, LuaClassMember) -> Unit, deep: Boolean) {
-        val clazzName = className
-        val project = context.project
-
-        val manager = LuaShortNamesManager.getInstance(project)
-        val members = manager.getClassMembers(clazzName, context)
-        val list = mutableListOf<LuaClassMember>()
-        list.addAll(members)
+    override fun getMemberChain(context: SearchContext): ClassMemberChain {
+        val superClazz = getSuperClass(context) as? ITyClass
+        val chain = ClassMemberChain(this, superClazz?.getMemberChain(context))
+        val manager = LuaShortNamesManager.getInstance(context.project)
+        val members = manager.getClassMembers(className, context)
+        members.forEach { chain.add(it) }
 
         processAlias(Processor { alias ->
             val classMembers = manager.getClassMembers(alias, context)
-            list.addAll(classMembers)
+            classMembers.forEach { chain.add(it) }
+            true
         })
 
-        for (member in list) {
-            processor(this, member)
-        }
+        return chain
+    }
 
-        // super
-        if (deep) {
-            processSuperClass(this, context) {
-                it.processMembers(context, processor, false)
-                true
-            }
-        }
+    override fun processMembers(context: SearchContext, processor: (ITyClass, LuaClassMember) -> Unit, deep: Boolean) {
+        val chain = getMemberChain(context)
+        chain.process(deep, processor)
     }
 
     override fun findMember(name: String, searchContext: SearchContext): LuaClassMember? {
-        return LuaShortNamesManager.getInstance(searchContext.project).findMember(this, name, searchContext)
-    }
-
-    override fun findMemberType(name: String, searchContext: SearchContext): ITy? {
-        return infer(findMember(name, searchContext), searchContext)
+        val chain = getMemberChain(searchContext)
+        return chain.findMember(name)
     }
 
     override fun findSuperMember(name: String, searchContext: SearchContext): LuaClassMember? {
-        // Travel up the hierarchy to find the lowest member of this type on a superclass (excluding this class)
-        var member: LuaClassMember? = null
-        processSuperClass(this, searchContext) {
-            member = it.findMember(name, searchContext)
-            member == null
-        }
-        return member
+        val chain = getMemberChain(searchContext)
+        return chain.superChain?.findMember(name)
     }
 
     override fun accept(visitor: ITyVisitor) {
@@ -285,17 +275,24 @@ fun createSerializedClass(name: String,
     return TySerializedClass(name, varName, supper, alias, flags)
 }
 
+private val PsiFile.uid: String get() {
+    if (this is LuaPsiFile)
+        return this.uid
+
+    return name
+}
+
 fun getTableTypeName(table: LuaTableExpr): String {
     val stub = table.stub
     if (stub != null)
         return stub.tableTypeName
 
-    val fileName = table.containingFile.name
+    val fileName = table.containingFile.uid
     return "$fileName@(${table.node.startOffset})table"
 }
 
 fun getAnonymousType(nameDef: LuaNameDef): String {
-    return "${nameDef.node.startOffset}@${nameDef.containingFile.name}"
+    return "${nameDef.node.startOffset}@${nameDef.containingFile.uid}"
 }
 
 fun getGlobalTypeName(text: String): String {
@@ -333,7 +330,7 @@ fun getDocTableTypeName(table: LuaDocTableDef): String {
     if (stub != null)
         return stub.className
 
-    val fileName = table.containingFile.name
+    val fileName = table.containingFile.uid
     return "10|$fileName|${table.node.startOffset}"
 }
 

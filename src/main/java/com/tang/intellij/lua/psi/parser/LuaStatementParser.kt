@@ -231,16 +231,31 @@ object LuaStatementParser : GeneratedParserUtilBase() {
         return m
     }
 
+    // Lua 5.4
+    private fun parseAttribute(b: PsiBuilder): PsiBuilder.Marker? {
+        if (b.tokenType == LT) {
+            val m = b.mark()
+            b.advanceLexer()
+            expectError(b, ID) { "ID" }
+            expectError(b, GT) { ">" }
+            m.done(ATTRIBUTE)
+            return m
+        }
+        return null
+    }
+
     private fun parseNameList(b: PsiBuilder): PsiBuilder.Marker? {
         var m = b.mark()
         if (expectError(b, ID) { "ID" }) {
             m.done(NAME_DEF)
+            parseAttribute(b)
             while (b.tokenType == COMMA) {
                 b.advanceLexer()
                 val nameDef = b.mark()
-                if (expectError(b, ID) { "ID" })
+                if (expectError(b, ID) { "ID" }) {
                     nameDef.done(NAME_DEF)
-                else nameDef.drop()
+                    parseAttribute(b)
+                } else nameDef.drop()
             }
             m = m.precede()
         }
@@ -270,7 +285,11 @@ object LuaStatementParser : GeneratedParserUtilBase() {
 
     fun parseFuncBody(b: PsiBuilder, l: Int): PsiBuilder.Marker {
         val m = b.mark()
-        expectError(b, LPAREN) { "'('" }
+        if (b.tokenType !== LPAREN) {
+            m.error("'(' expected")
+            return m
+        }
+        b.advanceLexer()
 
         // param list
         val def = expectParamName(b, false)

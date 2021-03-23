@@ -36,6 +36,17 @@ interface IFunSignature {
     fun subTypeOf(other: IFunSignature, context: SearchContext, strict: Boolean): Boolean
 }
 
+fun IFunSignature.getParamTyEx(callExpr: LuaCallExpr, index: Int): ITy {
+    var t: ITy = Ty.UNKNOWN
+    processArgs(callExpr) { i, param ->
+        if (i == index) {
+            t = param.ty
+            false
+        } else true
+    }
+    return t
+}
+
 fun IFunSignature.processArgs(callExpr: LuaCallExpr, processor: (index:Int, param: LuaParamInfo) -> Boolean) {
     val expr = callExpr.expr
     val thisTy = if (expr is LuaIndexExpr) {
@@ -214,13 +225,17 @@ interface ITyFunction : ITy {
 
 val ITyFunction.isColonCall get() = hasFlag(TyFlags.SELF_FUNCTION)
 
-fun ITyFunction.process(processor: Processor<IFunSignature>) {
-    if (processor.process(mainSignature)) {
+fun ITyFunction.process(processor: (IFunSignature) -> Boolean) {
+    if (processor(mainSignature)) {
         for (signature in signatures) {
-            if (!processor.process(signature))
+            if (!processor(signature))
                 break
         }
     }
+}
+
+fun ITyFunction.process(processor: Processor<IFunSignature>) {
+    process { processor.process(it) }
 }
 
 fun ITyFunction.findPerfectSignature(nArgs: Int): IFunSignature {

@@ -14,17 +14,14 @@
  * limitations under the License.
  */
 
-package com.tang.intellij.lua.lang
+package com.intellij.codeInsight.daemon
 
-import com.intellij.openapi.fileTypes.FileTypeConsumer
-import com.intellij.openapi.fileTypes.FileTypeFactory
+import com.intellij.psi.PsiElement
 
-/**
- * Created by tangzx on 2015/11/15.
- * Email:love.tangzx@qq.com
- */
-class LuaFileTypeFactory : FileTypeFactory() {
-    override fun createFileTypes(fileTypeConsumer: FileTypeConsumer) {
-        fileTypeConsumer.consume(LuaFileType.INSTANCE, "lua")
+abstract class AbstractLineMarkerProvider : LineMarkerProvider {
+    override fun collectSlowLineMarkers(list: List<PsiElement>, collection: MutableCollection<in LineMarkerInfo<*>>) {
+        collectSlowLineMarkersExt(list, collection)
     }
+
+    abstract fun collectSlowLineMarkersExt(list: List<PsiElement>, collection: MutableCollection<in LineMarkerInfo<*>>)
 }

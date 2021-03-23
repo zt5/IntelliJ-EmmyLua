@@ -84,11 +84,14 @@ private fun LuaExpr.shouldBeInternal(context: SearchContext): ITy {
             var ret: ITy = Ty.UNKNOWN
             fTy.each {
                 if (it is ITyFunction) {
-                    var sig = it.mainSignature
-                    val substitutor = p2.createSubstitutor(sig, context)
-                    if (substitutor != null) sig = sig.substitute(substitutor)
+                    it.process { signature ->
+                        var solvedSignature = signature
+                        val substitutor = p2.createSubstitutor(solvedSignature, context)
+                        if (substitutor != null) solvedSignature = solvedSignature.substitute(substitutor)
 
-                    ret = ret.union(sig.getParamTy(idx))
+                        ret = ret.union(solvedSignature.getParamTyEx(p2, idx))
+                        true
+                    }
                 }
             }
             return ret
